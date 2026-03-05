@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slovíčka</title>
+  <style>
+    :root{
+      --bg:#ffffff;
+      --ink:#111;
+      --muted:#666;
+      --line:#111;
+      --soft:#e9e9e9;
+      --radius:999px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    /* rám jako na skice */
+    .frame{
+      width:min(1100px, calc(100% - 48px));
+      margin:24px auto;
+      border-radius:18px;
+      padding:20px 20px 60px; /* slightly smaller bottom space */
+      min-height:80vh;
+      display:flex;
+      flex-direction:column;
+      gap:18px;
+    }
+
+    /* horní řádek: title vlevo, search vpravo */
+    .top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .title{
+      font-size:22px;
+      font-weight:700;
+      letter-spacing:0.2px;
+    }
+
+    /* „pilulky“ jako ručně kreslené inputy */
+    .pill{
+      border:3px solid var(--line);
+      border-radius:var(--radius);
+      background:#fff;
+      padding:10px 14px;
+      font-size:16px;
+      outline:none;
+      width: 320px;
+      max-width: 50vw;
+    }
+
+    /* obsah: jeden řádek slovíček */
+    .content{
+      flex:1;
+      padding:10px 6px;
+      overflow:auto;
+    }
+
+    .list{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+      padding-right:6px;
+    }
+
+    .item{
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      gap:14px;
+      font-size:18px;
+      line-height:1.2;
+      padding:8px 12px;
+      border:2px solid var(--soft);
+      border-radius:12px;
+      background:#fff;
+      cursor:pointer;
+      transition: all 0.2s ease;
+    }
+    .item:hover{
+      border-color: var(--line);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .en{ font-weight:600; }
+    .dash{
+      width:26px;
+      height:3px;
+      background:var(--line);
+      border-radius:999px;
+      transform: translateY(1px);
+      flex:0 0 auto;
+    }
+    .cz{ color:#111; }
+    .item .copyHint{
+      margin-left:auto;
+      font-size:12px;
+      color:var(--muted);
+      opacity:0;
+      transition:opacity .15s;
+    }
+    .item:hover .copyHint{ opacity:1; }
+
+    /* dolní ovládání */
+    .bottom{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position:fixed;
+      bottom:0;
+      left:0;
+      right:0;
+      background:var(--bg);
+      padding:10px 0;
+      box-shadow:0 -2px 6px rgba(0,0,0,0.1);
+    }
+
+    .composer{
+      display:flex;
+      align-items:stretch;
+      width:min(760px, 100%);
+      border:3px solid var(--line);
+      border-radius:var(--radius);
+      overflow:hidden;
+      background:#fff;
+      margin-top:20px; /* space above input */
+      padding:4px 0; /* slim down */
+    }
+    .composer input{
+      border:none;
+      outline:none;
+      padding:14px 16px;
+      font-size:16px;
+      flex:1;
+      min-width: 220px;
+    }
+    .composer button{
+      border:none;
+      border-left:3px solid var(--line);
+      padding:0 18px;
+      font-size:16px;
+      font-weight:700;
+      cursor:pointer;
+      background:#fff;
+      min-width:150px;
+    }
+    .composer button:hover{ background:#f5f5f5; }
+    .composer button:disabled{ opacity:.6; cursor:not-allowed; }
+
+    /* malý status */
+    .status{
+      text-align:center;
+      font-size:13px;
+      color:var(--muted);
+      min-height:18px;
+      margin-top:2px;
+    }
+
+    /* mobil */
+    @media (max-width: 840px){
+      .frame{
+        width:100%;
+        margin:0;
+        border-radius:0;
+        padding:12px;
+      }
+      .content{ grid-template-columns: 1fr; }
+      .pill{ width: 100%; max-width: none; }
+      .composer{ width:100%; margin-top:16px; padding:2px 0; }
+      .bottom{padding:10px 0;}
+      .top{ flex-direction:column; align-items:flex-start; gap:8px; }
+      .title{ font-size:20px; }
+      .item{ padding:12px 16px; font-size:20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="top">
+      <div class="title"></div>
+      <input id="searchInput" class="pill" type="text" placeholder="vyhledat slovíčko" />
+    </div>
+
+    <div id="content" class="content">
+      <div id="list" class="list"></div>
+    </div>
+
+    <div class="bottom">
+      <div style="width:min(760px, 100%);">
+        <div class="composer">
+          <input id="enInput" type="text" placeholder="write here something" />
+          <button id="addBtn">EN→CZ</button>
+        </div>
+        <div id="status" class="status"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // PWA install prompt handling
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:10px;background:#fffa;border-bottom:1px solid #ccc;text-align:center;z-index:30;font-size:14px;';
+    banner.innerHTML = 'Přidej aplikaci na plochu pro offline přístup <button id="installBtn">Instalovat</button>';
+    document.body.appendChild(banner);
+    document.getElementById('installBtn').onclick = async () => {
+      banner.remove();
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+    };
+  });
+
+  const STORAGE_KEY = "slovicka-sketch-ui-v1";
+  /** @type {{id:string,en:string,cz:string,createdAt:number}[]} */
+  let words = [];
+
+  const el = (id) => document.getElementById(id);
+  const enInput = el("enInput");
+  const addBtn = el("addBtn");
+  const searchInput = el("searchInput");
+  const list = el("list");
+  const statusEl = el("status");
+
+  function uid(){ return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16); }
+  function normalize(s){ return s.trim().toLowerCase(); }
+
+  function setStatus(msg=""){
+    statusEl.textContent = msg;
+  }
+
+  function save(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
+    render();
+  }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      words = raw ? JSON.parse(raw) : [];
+    }catch{
+      words = [];
+    }
+    render();
+  }
+
+  // Auto translate (3 endpoints)
+  async function translateEnToCzAuto(text){
+    // 1. MyMemory (nejspolehlivější, bez CORS problémů)
+    try{
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|cs`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.responseStatus === 200 && data.responseData?.translatedText) {
+          return String(data.responseData.translatedText).trim();
+        }
+      }
+    }catch(e){
+      console.log("MyMemory failed, trying next...");
+    }
+
+    // 2. LibreTranslate endpoints
+    const endpoints = [
+      "https://libretranslate.de/translate",
+      "https://libretranslate.com/translate"
+    ];
+    let lastErr = null;
+
+    for (const url of endpoints){
+      try{
+        const res = await fetch(url, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ q:text, source:"en", target:"cs", format:"text" })
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (!data?.translatedText) throw new Error("Bad response");
+        return String(data.translatedText).trim();
+      }catch(e){
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("Auto translate failed");
+  }
+
+  async function translateEnToCz(text){
+    try{
+      return await translateEnToCzAuto(text);
+    }catch(e){
+      const manual = prompt("Auto překlad selhal. Zadej český překlad pro: " + text);
+      if (!manual) throw new Error("Nebyl zadán překlad");
+      return manual.trim();
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  function render(){
+    const q = normalize(searchInput.value);
+    const filtered = words.filter(w => !q || normalize(w.en).includes(q) || normalize(w.cz).includes(q));
+
+    // Seřadit od nejnověji přidaného (podle createdAt, sestupně)
+    filtered.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const tpl = (w) => `
+      <div class="item" data-id="${escapeHtml(w.id)}">
+        <span class="en" data-copy="${escapeHtml(w.en)}">${escapeHtml(w.en)}</span>
+        <span class="dash"></span>
+        <span class="cz" data-copy="${escapeHtml(w.cz)}">${escapeHtml(w.cz)}</span>
+        <span class="copyHint">klikni pro kopii</span>
+      </div>
+    `;
+
+    list.innerHTML = filtered.map(tpl).join("");
+
+    // klik pro kopii
+    document.querySelectorAll("[data-copy]").forEach(node => {
+      node.onclick = async () => {
+        const txt = node.getAttribute("data-copy") || "";
+        try{
+          await navigator.clipboard.writeText(txt);
+          setStatus("Zkopírováno: " + txt);
+          setTimeout(()=>setStatus(""), 900);
+        }catch{
+          setStatus("Nepovedlo se zkopírovat.");
+        }
+      };
+    });
+
+    // dlouhý klik = smazat (jednoduché „gesto“ bez tlačítka, aby UI zůstalo čisté)
+    document.querySelectorAll(".item").forEach(item => {
+      let t = null;
+      item.onmousedown = () => {
+        t = setTimeout(() => {
+          const id = item.getAttribute("data-id");
+          if (id && confirm("Smazat toto slovíčko?")) {
+            words = words.filter(w => w.id !== id);
+            save();
+          }
+        }, 600);
+      };
+      item.onmouseup = () => { if (t) clearTimeout(t); };
+      item.onmouseleave = () => { if (t) clearTimeout(t); };
+    });
+  }
+
+  async function addWord(){
+    const en = enInput.value.trim();
+    if (!en) return;
+
+    if (words.some(w => normalize(w.en) === normalize(en))){
+      setStatus("Tohle slovíčko už máš.");
+      return;
+    }
+
+    setStatus("Překládám…");
+    addBtn.disabled = true;
+
+    try{
+      const cz = await translateEnToCz(en);
+      words.unshift({ id: uid(), en, cz, createdAt: Date.now() });
+      enInput.value = "";
+      save();
+      setStatus("Uloženo ✅");
+      setTimeout(()=>setStatus(""), 900);
+    }catch(e){
+      console.error(e);
+      setStatus("Nepodařilo se uložit.");
+    }finally{
+      addBtn.disabled = false;
+    }
+  }
+
+  addBtn.addEventListener("click", addWord);
+  enInput.addEventListener("keydown", (e)=>{ if (e.key === "Enter") addWord(); });
+  searchInput.addEventListener("input", render);
+
+  load();
+</script>
+</body>
+</html>
